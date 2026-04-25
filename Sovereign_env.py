@@ -120,7 +120,7 @@ class SovereignEnv(gym.Env):
 
     def __init__(
         self,
-        T_max: int = 200,
+        T_max: int = 100,
         edges: Optional[List[Tuple[int, int]]] = None,
         resource_values: Optional[np.ndarray] = None,
         strategic_values: Optional[np.ndarray] = None,
