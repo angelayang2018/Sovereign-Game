@@ -245,7 +245,7 @@ class SovereignEnv(gym.Env):
                 done = True
                 terminal_reward = TERMINAL_MIL_DEFEAT
                 termination_reason = "military_defeat"
-            elif np.all(s["control"] == INVADER):
+            elif np.all((s["control"] == INVADER) | (s["control"] == NEUTRAL)):
                 done = True
                 terminal_reward = TERMINAL_CONQUEST
                 termination_reason = "conquest"
