@@ -1,0 +1,34 @@
+  20k runs
+  python3.12 Sovereign_agent.py --mode protocol --steps 20000
+
+
+  Termination summary for 'no_occupation seed=42' (8020 episodes):
+    negotiated_settlement      7999  ( 99.7%)  █████████████████████████████████████████████████
+    conquest                      0  (  0.0%)  
+    legitimacy_collapse           2  (  0.0%)  
+    military_defeat              15  (  0.2%)  
+    timeout                       4  (  0.0%)  
+  Eval summary [no_occupation] R 40.39±0.00 | Inv 1.00±0.00 | Dip 1.00±0.00 | OccTerr 1.88±0.00
+
+  Termination summary for 'no_posture seed=42' (210 episodes):
+    negotiated_settlement         0  (  0.0%)  
+    conquest                      0  (  0.0%)  
+    legitimacy_collapse           0  (  0.0%)  
+    military_defeat              23  ( 11.0%)  █████
+    timeout                     187  ( 89.0%)  ████████████████████████████████████████████
+  Eval summary [no_posture] R 9.00±0.00 | Inv 0.00±0.00 | Dip 1.00±0.00 | OccTerr 0.00±0.00
+
+    Termination summary for 'baseline_all_off seed=42' (213 episodes):
+    negotiated_settlement         0  (  0.0%)  
+    conquest                      0  (  0.0%)  
+    legitimacy_collapse           0  (  0.0%)  
+    military_defeat              32  ( 15.0%)  ███████
+    timeout                     181  ( 85.0%)  ██████████████████████████████████████████
+  Eval summary [baseline_all_off] R 37.98±0.00 | Inv 1.00±0.00 | Dip 0.09±0.00 | OccTerr 7.00±0.00
+
+
+
+Baseline means all three mechanisms are disabled:
+L inactive: no legitimacy dynamics
+t_occ inactive: no occupation-duration cost/insurgency pressure
+theta inactive: no neutral-posture coalition dynamics

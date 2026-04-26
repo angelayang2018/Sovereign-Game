@@ -126,6 +126,7 @@ class SovereignEnv(gym.Env):
         strategic_values: Optional[np.ndarray] = None,
         weights: Optional[Dict] = None,
         posture_coeffs: Optional[Dict] = None,
+        hold_penalty: float = 0.0,
         # Ablation flags
         legitimacy_active: bool = True,
         occupation_active: bool = True,
@@ -153,6 +154,7 @@ class SovereignEnv(gym.Env):
 
         self.weights = {**DEFAULT_WEIGHTS,       **(weights        or {})}
         self.pc      = {**DEFAULT_POSTURE_COEFFS, **(posture_coeffs or {})}
+        self.hold_penalty = max(0.0, float(hold_penalty))
 
         # Sanction hysteresis tracker
         self._sanction_active = False
@@ -553,11 +555,12 @@ class SovereignEnv(gym.Env):
         r_occ  = w["w_O"] * (t_occ / T_max) * occ_mult if self.occupation_active else 0.0
         r_leg  = w["w_L"] * (1.0 - s["L"]) if self.legitimacy_active else 0.0
         sanction_pen = w["w_S"] * (1.0 - s["E"]) if self._sanction_active else 0.0
+        hold_pen = self.hold_penalty if a_mil == MIL_HOLD else 0.0
         # Insurgency handled inside _update_derived_state (unit loss); no extra penalty here
         # but add a small signal
         r_ins = 0.0  # already paid via unit loss
 
-        reward = r_territory + r_capture - r_occ - r_leg - sanction_pen - r_ins
+        reward = r_territory + r_capture - r_occ - r_leg - sanction_pen - hold_pen - r_ins
         return float(reward)
 
     def _invader_controlled_resources(self) -> float:
@@ -597,6 +600,11 @@ class SovereignEnv(gym.Env):
 
     def _get_info(self) -> Dict:
         s = self._state
+        invader_territories = int(np.sum(s["control"] == INVADER))
+        invader_non_home_territories = int(np.sum(
+            (s["control"] == INVADER)
+            & (np.arange(self.n_territories) != HOME_TERRITORY[INVADER])
+        ))
         return {
             "step":            self._step_count,
             "L":               s["L"],
@@ -604,6 +612,8 @@ class SovereignEnv(gym.Env):
             "E_D":             s["E_D"],
             "theta":           s["theta"],
             "t_occ":           s["t_occ"],
+            "invader_territories": invader_territories,
+            "invader_non_home_territories": invader_non_home_territories,
             "invader_units":   int(s["units_I"].sum()),
             "defender_units":  int(s["units_D"].sum()),
             "sanction_active": self._sanction_active,

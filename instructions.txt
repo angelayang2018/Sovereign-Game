@@ -1,0 +1,295 @@
+SOVEREIGN Game
+SOVEREIGN Game Rulebook: A Strategic Simulation
+Environment for Deep Reinforcement Learning
+Research
+Table of Contents
+1. Overview
+2. Nations
+3. The Game Board
+4. State Space
+5. Turn Structure
+6. Action Space
+7. Neutral Posture System
+8. Reward Function
+9. Terminal Conditions
+10. The Core Experimental Protocol
+Note: This is a pilot project intended to promote unusual but meaningful interdisciplinary collaboration
+between computer science and peace studies. The following is an interesting research by Meta. This
+rulebook was inspired by the Diplomacy board game. I drafted this rulebook with a help of an AI
+agent. There could be some ambiguity in the definition (mainly because the state and action of the
+original Diplomacy game was too huge to simply..., but I tried my best.). If you find any issue or
+unclear definitions, please report it to me.
+Meta Fundamental AI Research Diplomacy Team (FAIR) et al., Human-level play in the game of
+Diplomacy by combining language models with strategic reasoning. Science, 378, 1067-1074
+(2022). DOI:10.1126/science.ade9097 (PDF (https://noambrown.github.io/papers/22-ScienceDiplomacy-TR.pdf) )
+Diplomacy package (https://diplomacy.readthedocs.io/en/stable/) : Diplomacy is a strategic
+board game when you play a country (power) on a map with the goal to conquer at least half to all
+the supply centers present on the map.
+4/15/26, 8:47 PM SOVEREIGN Game: SP26: CS-272 Sec 01 - Reinforcement Learn
+https://sjsu.instructure.com/courses/1620904/pages/sovereign-game 1/8
+1. Overview
+SOVEREIGN is a deterministic-core, stochastic-politics strategic simulation designed as a
+Gymnasium-compatible environment for deep reinforcement learning research. It models a threenation geopolitical conflict in which one nation (the Invader) holds a clear military advantage and
+must decide how to pursue its strategic objectives through a joint military–political action space.
+The central research question the environment is designed to probe: Can a militarily superior agent
+learn, through experience alone, that invasion is a strategically dominated strategy?
+The environment does not punish invasion by fiat. The cost of aggression emerges organically
+through the interaction of political legitimacy, economic attrition, occupation drag, and shifting
+international coalitions.
+2. Nations
+The game is played with exactly three nations. Their roles are fixed at initialization.
+Nation Role Starting Condition
+Invader (I)
+The learning agent. Controls the DRL
+policy.
+Hard-power advantage: 2× military units,
+higher strike capacity
+Defender
+(D)
+Rule-based opponent. Responds to
+Invader actions.
+Home-turf advantage: +20% unit
+effectiveness on own territory
+Neutral (N)
+Stochastic observer. Posture shifts based
+on Invader behavior.
+Begins at θ = 0 (true neutral)
+2.1 Hard-Power Asymmetry
+The Invader begins the game with a deliberate and significant military advantage. This is a design
+requirement, not a coincidence. The thesis of the environment is that a superior agent learns that
+invasion is irrational. If the Invader were weak, the result would be trivially explained by military
+inferiority.
+Default initialization:
+Invader: 12 ground units, 3 strike units, supply index = 1.0
+Defender: 6 ground units, 1 strike unit, supply index = 1.0
+Neutral: 4 ground units, 0 strike units (non-combatant at θ = 0)
+3. The Game Board
+The map is a graph G = (V, E) where nodes are territories and edges are adjacency (movement is
+permitted only along edges).
+4/15/26, 8:47 PM SOVEREIGN Game: SP26: CS-272 Sec 01 - Reinforcement Learn
+https://sjsu.instructure.com/courses/1620904/pages/sovereign-game 2/8
+3.1 Territories
+Each territory v ∈ V has three attributes:
+Attribute Type Description
+controller {I, D, N, Contested} Which nation controls the territory
+resource_value Float [0, 1] Economic output contributed per step if controlled
+strategic_value Float [0, 1] Military significance (affects supply lines)
+3.2 Supply Lines
+A nation's supply index E ∈ [0, 1] is computed each step as a function of territory connectivity.
+Occupied territories that are not contiguous with the Invader's home territory generate no resource
+value and increase occupation cost.
+3.3 Default Map
+The default map has 9 territories: 3 home territories (one per nation) and 6 contested territories. You
+can create one sample topology. Also, you can consider testing the performance in other topologies.
+(Show at least one map.)
+4. State Space
+At each timestep t , the environment emits a state vector s_t comprising the following components.
+4.1 State Variables
+Variable Symbol Type Description
+Territory control
+map
+M
+Binary
+matrix |V| x
+3
+One-hot encoding of controller per
+territory
+Military strength
+U_I,
+U_D
+Integer
+vector
+Unit counts per territory for Invader and
+Defender
+International
+legitimacy
+L
+Float [0,
+1]
+Invader's standing in the international
+community
+Economic
+supply index
+E
+Float [0,
+1]
+Invader's economic and logistical
+health
+Neutral posture θ
+Float [-1,
++1]
+Neutral nation's alignment
+Occupation
+duration
+t_occ Integer ≥ 0
+Consecutive steps the Invader has held
+non-home territory
+4/15/26, 8:47 PM SOVEREIGN Game: SP26: CS-272 Sec 01 - Reinforcement Learn
+https://sjsu.instructure.com/courses/1620904/pages/sovereign-game 3/8
+Bold variables are the soul of the design. They are the mechanisms through which the long-run cost
+of aggression manifests. Ablating any of them materially changes the agent's optimal policy.
+4.2 Legitimacy L
+L represents the Invader's international standing. It begins at L = 1.0 and decays under aggressive
+action. It recovers slowly under diplomatic action.
+Governs how the Neutral nation responds to the Invader
+Determines whether sanctions are imposed (threshold event at θ > 0.6 )
+Terminal collapse condition: L = 0
+4.3 Neutral Posture θ
+θ ∈ [-1, +1] encodes the Neutral nation's political alignment:
+θ = -1.0 → fully allied with Invader (supply routes open, no sanctions)
+θ = 0.0 → true neutral
+θ = +1.0 → fully allied with Defender (sanctions active, military support)
+See Section 7 for the full posture shift model.
+4.4 Occupation Duration t_occ
+t_occ is a monotonically increasing counter that resets only if the Invader withdraws all units from
+non-home territory. It drives:
+Per-step occupation cost (linear in t_occ )
+Insurgency probability p(insurgency | t_occ) — a stochastic event that destroys one Invader unit
+per occurrence
+5. Turn Structure
+Each game step proceeds in the following fixed sequence:
+┌─────────────────────────────────────────────────────────┐
+│ STEP t │
+│ │
+│ 1. Observe state s_t │
+│ 2. Invader selects political action a_pol │
+│ 3. Invader selects military action a_mil │
+│ 4. Defender responds (rule-based policy) │
+│ 5. Resolve military outcomes (deterministic) │
+│ 6. Update territory control map M │
+│ 7. Update L, E, t_occ │
+│ 8. Sample Neutral posture shift Δθ │
+│ 9. Check threshold events (sanctions, coalition) │
+│ 10. Check terminal conditions │
+│ 11. Compute reward r_t │
+│ 12. Emit (s_{t+1}, r_t, done, info) │
+└─────────────────────────────────────────────────────────┘
+4/15/26, 8:47 PM SOVEREIGN Game: SP26: CS-272 Sec 01 - Reinforcement Learn
+https://sjsu.instructure.com/courses/1620904/pages/sovereign-game 4/8
+The political action is committed before the military action. This is a deliberate design constraint.
+The agent cannot use military force as a substitute for political reasoning within a single step.
+6. Action Space
+The Invader's action at each step is a joint action a = (a_pol, a_mil) .
+6.1 Political Actions A_pol
+Action Effect on L Effect on θ Effect on E
+SEEK_ALLIANCE +0.01 −0.05 (toward Invader) —
+IMPOSE_SANCTION −0.02 +0.04 (toward Defender) −0.03 (target)
+ISSUE_THREAT −0.03 +0.03 —
+NEGOTIATE +0.03 −0.04 —
+DO_NOTHING Slow decay if L < 0.5 Slow drift if t_occ > 0 —
+6.2 Military Actions A_mil
+Action Territory effect Effect on L Effect on t_occ
+ADVANCE Claim adjacent territory −0.05 +1 per step in non-home
+HOLD Maintain current positions — +1 per step in non-home
+WITHDRAW Cede one contested territory +0.02 Resets if full withdrawal
+STRIKE Destroy one Defender unit −0.08 +1
+7. Neutral Posture System
+This section describes the most nuanced mechanism in the environment.
+7.1 Drift-Diffusion Model
+Neutral posture evolves according to:
+θ_{t+1} = clip( θ_t + μ(s_t, a_t) + ε, −1, +1 )
+where ε ~ N(0, σ²), σ = 0.02 (default)
+The deterministic drift μ encodes the rational response of the international community to
+observable Invader behavior. The stochastic noise ε models the irreducible uncertainty of
+international politics.
+7.2 Drift Function
+μ(s_t, a_t) = + α · (1 − L) # low legitimacy alienates neutral
+ + β · [a_mil = ADVANCE] # territorial advance shocks posture
+ + γ · [a_mil = STRIKE] # strikes carry heavier cost
+4/15/26, 8:47 PM SOVEREIGN Game: SP26: CS-272 Sec 01 - Reinforcement Learn
+https://sjsu.instructure.com/courses/1620904/pages/sovereign-game 5/8
+ − δ · [a_pol = NEGOTIATE]# diplomacy pulls posture toward center
+ − ε · [a_pol = SEEK_ALLIANCE] # alliance-seeking reduces drift
+ + ζ · (t_occ / T_max) # prolonged occupation steadily alienates
+Default coefficients:
+Coefficient SymbolDefault value
+Legitimacy coupling α 0.04
+Advance shock β 0.05
+Strike shock γ 0.10
+Negotiate pull δ 0.04
+Alliance pull ε 0.03
+Occupation drift ζ 0.03
+7.3 Threshold Events
+When θ crosses discrete thresholds, irreversible geopolitical events are triggered:
+Threshold Event Mechanical Effect
+θ > 0.60 Neutral imposes sanctions Invader E reduced by 0.01/step
+θ > 0.85 Neutral joins Defender Defender receives +2 units; Invader L −0.10
+θ < −0.60 Neutral opens supply routes Invader occupation cost reduced 30%
+θ < −0.85 Neutral formally allies Invader Defender E reduced; L −0.05
+Design note: Thresholds are one-directional by default. Once sanctions are imposed, they are not
+lifted unless θ falls back below 0.50 and stays there for 5 consecutive steps. This hysteresis
+models the political difficulty of reversing international coalitions.
+8. Reward Function
+The reward at each step is:
+r_t = r_pos(s_t, a_t) − r_neg(s_t, a_t)
+8.1 Positive Terms
+Component Formula Description
+Territory control
+w_T · Σ resource_value(v) for v controlled by
+I
+Economic yield of held territory
+Resource
+capture
+w_R · Δ(controlled resources)
+Bonus for newly captured
+territory
+4/15/26, 8:47 PM SOVEREIGN Game: SP26: CS-272 Sec 01 - Reinforcement Learn
+https://sjsu.instructure.com/courses/1620904/pages/sovereign-game 6/8
+8.2 Negative Terms (per step)
+Component Formula Description
+Occupation
+cost
+w_O · t_occ / T_max
+Linear cost of sustained
+occupation
+Legitimacy loss w_L · (1 − L)
+Penalty proportional to
+legitimacy deficit
+Sanction
+penalty
+w_S · [θ > 0.6] · (1 − E)
+Active when sanctions threshold
+crossed
+Insurgency
+event
+`w_I ·
+Bernoulli(p(insurgency \
+t_occ))`
+Stochastic unit
+destruction
+Default weights:
+WeightDefault
+w_T 0.30
+w_R 0.20
+w_O 0.25
+w_L 0.15
+w_S 0.20
+w_I 0.10
+8.3 Insurgency Probability
+p(insurgency | t_occ) = 1 − exp(−λ · t_occ)
+Default: λ = 0.05
+This is a standard reliability-theory hazard function. At t_occ = 10 , insurgency probability per step is
+approximately 40%. At t_occ = 20 , it exceeds 63%.
+9. Terminal Conditions
+An episode ends when any of the following conditions is met:
+Condition Type Terminal Reward
+L ≤ 0 Political collapse −50 (large penalty)
+All Invader units destroyed Military defeat −30
+Negotiated settlement reached Diplomatic resolution +40 (large bonus)
+t ≥ T_max Time limit 0 (no bonus)
+Invader controls all territories Total conquest +10 (intentionally modest)
+4/15/26, 8:47 PM SOVEREIGN Game: SP26: CS-272 Sec 01 - Reinforcement Learn
+https://sjsu.instructure.com/courses/1620904/pages/sovereign-game 7/8
+10. The Core Experimental Protocol
+Train the agent under varying parameter regimes and measure whether the peace-dominant policy
+emerges:
+Experiment L active t_occ active θ activeExpected optimal policy
+Full model ✓ ✓ ✓ Negotiate or deter
+No legitimacy ✗ ✓ ✓ Slower invasion
+No occupation cost ✓ ✗ ✓ Partial invasion
+No neutral posture ✓ ✓ ✗ Invasion
+Baseline (all off) ✗ ✗ ✗ Always invade
+Also, analyze the impact of different parameter values. (e.g., if the sanction starts earlier, does it
+change the behavior of the invader?)
+4/15/26, 8:47 PM SOVEREIGN Game: SP26: CS-272 Sec 01 - Reinforcement Learn
+https://sjsu.instructure.com/courses/1620904/pages/sovereign-game 8/8
