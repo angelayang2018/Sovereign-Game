@@ -1,0 +1,9 @@
+{
+  "conditions": [
+    "full_model",
+    "no_legitimacy",
+    "no_occupation",
+    "no_posture",
+    "baseline_all_off"
+  ]
+}

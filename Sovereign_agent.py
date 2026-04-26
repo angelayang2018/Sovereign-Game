@@ -16,6 +16,7 @@ from collections import defaultdict
 from typing import Any, Dict, List, Tuple, Optional
 import time
 import argparse
+import json
 from collections import Counter
 
 from Sovereign_env import (
@@ -387,20 +388,34 @@ CONDITION_CONFIGS = {
     "full_model": {
         "env_kwargs": dict(legitimacy_active=True, occupation_active=True, posture_active=True),
         "train_kwargs": {},
+        "expected_policy": "Negotiate or deter",
     },
     "no_legitimacy": {
         "env_kwargs": dict(legitimacy_active=False, occupation_active=True, posture_active=True),
         "train_kwargs": {},
+        "expected_policy": "Slower invasion",
     },
     "no_occupation": {
         "env_kwargs": dict(legitimacy_active=True, occupation_active=False, posture_active=True),
         "train_kwargs": {},
+        "expected_policy": "Partial invasion",
     },
     "no_posture": {
         "env_kwargs": dict(legitimacy_active=True, occupation_active=True, posture_active=False),
         "train_kwargs": {},
+        "expected_policy": "Invasion",
     },
     "baseline_all_off": {
+        "env_kwargs": dict(
+            legitimacy_active=False,
+            occupation_active=False,
+            posture_active=False,
+        ),
+        "train_kwargs": {},
+        "expected_policy": "Always invade",
+    },
+    # Optional extension variant (not strict rulebook baseline).
+    "baseline_all_off_shaped": {
         "env_kwargs": dict(
             legitimacy_active=False,
             occupation_active=False,
@@ -409,8 +424,18 @@ CONDITION_CONFIGS = {
             hold_penalty=0.01,
         ),
         "train_kwargs": {},
+        "expected_policy": "Always invade",
     },
 }
+
+
+RULEBOOK_EXPERIMENT_ORDER = [
+    "full_model",
+    "no_legitimacy",
+    "no_occupation",
+    "no_posture",
+    "baseline_all_off",
+]
 
 
 def evaluate_policy(
@@ -497,20 +522,38 @@ def _print_protocol_summary(condition: str, aggregate_eval: Dict[str, float]) ->
     )
 
 
+def _print_experiment_header(name: str, expected_policy: str) -> None:
+    print(f"  Condition: {name}")
+    print(f"  Expected optimal policy: {expected_policy}")
+
+
 def run_protocol(
     total_steps: int = 500_000,
     seeds: Optional[List[int]] = None,
     eval_episodes: int = 200,
+    condition_names: Optional[List[str]] = None,
     verbose: bool = True,
 ) -> Dict[str, Dict[str, Any]]:
     """Run the full experimental protocol across all ablation conditions."""
     seeds = seeds or [42]
     results: Dict[str, Dict[str, Any]] = {}
 
-    for name, config in CONDITION_CONFIGS.items():
+    if condition_names is None:
+        selected_names = RULEBOOK_EXPERIMENT_ORDER.copy()
+    else:
+        unknown = sorted(set(condition_names) - set(CONDITION_CONFIGS.keys()))
+        if unknown:
+            raise ValueError(
+                f"Unknown conditions: {unknown}. "
+                f"Available: {sorted(CONDITION_CONFIGS.keys())}"
+            )
+        selected_names = condition_names
+
+    for name in selected_names:
+        config = CONDITION_CONFIGS[name]
         if verbose:
             print(f"\n{'='*60}")
-            print(f"  Condition: {name}")
+            _print_experiment_header(name, config.get("expected_policy", "N/A"))
             print(f"{'='*60}")
 
         env_kwargs = dict(config["env_kwargs"])
@@ -536,9 +579,12 @@ def run_protocol(
                 base_seed=100_000 + seed,
             )
             eval_metrics_by_seed.append(eval_metrics)
+            train_term_counts = Counter(e["termination"] for e in logs)
             seed_runs.append({
                 "seed": seed,
                 "train_summary": train_summary,
+                "train_episodes": len(logs),
+                "train_termination_counts": dict(train_term_counts),
                 "eval": eval_metrics,
             })
 
@@ -547,11 +593,27 @@ def run_protocol(
             _print_protocol_summary(name, aggregate_eval)
 
         results[name] = {
-            "config": {"env_kwargs": env_kwargs, "train_kwargs": train_kwargs},
+            "config": {
+                "env_kwargs": env_kwargs,
+                "train_kwargs": train_kwargs,
+                "expected_policy": config.get("expected_policy", "N/A"),
+            },
             "runs": seed_runs,
             "aggregate_eval": aggregate_eval,
         }
     return results
+
+
+def load_condition_selection(path: str) -> List[str]:
+    """Load selected condition names from a JSON file."""
+    with open(path, "r", encoding="utf-8") as f:
+        payload = json.load(f)
+    if not isinstance(payload, dict) or "conditions" not in payload:
+        raise ValueError("Condition file must be a JSON object with key 'conditions'.")
+    conditions = payload["conditions"]
+    if not isinstance(conditions, list) or not all(isinstance(c, str) for c in conditions):
+        raise ValueError("'conditions' must be a list of strings.")
+    return conditions
 
 def _print_termination_summary(name: str, logs: List[Dict]) -> None:
     """Print termination reason breakdown for a training condition."""
@@ -593,9 +655,30 @@ if __name__ == "__main__":
     parser.add_argument("--steps", type=int, default=500_000)
     parser.add_argument("--eval_episodes", type=int, default=200)
     parser.add_argument("--seeds", type=int, nargs="+", default=[42])
+    parser.add_argument(
+        "--conditions",
+        type=str,
+        nargs="+",
+        default=None,
+        help="Optional subset of condition names to run.",
+    )
+    parser.add_argument(
+        "--condition_file",
+        type=str,
+        default=None,
+        help="Optional JSON file with key 'conditions' listing condition names.",
+    )
     args = parser.parse_args()
 
     if args.mode == "protocol":
-        run_protocol(total_steps=args.steps, seeds=args.seeds, eval_episodes=args.eval_episodes)
+        selected_conditions = args.conditions
+        if args.condition_file:
+            selected_conditions = load_condition_selection(args.condition_file)
+        run_protocol(
+            total_steps=args.steps,
+            seeds=args.seeds,
+            eval_episodes=args.eval_episodes,
+            condition_names=selected_conditions,
+        )
     elif args.mode == "demo":
         demo_random(30)
