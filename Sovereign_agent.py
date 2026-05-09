@@ -535,7 +535,7 @@ def _print_experiment_header(name: str, expected_policy: str) -> None:
 
 
 def run_protocol(
-    total_steps: int = 500_000,
+    total_steps: int = 1_000_000,
     seeds: Optional[List[int]] = None,
     eval_episodes: int = 200,
     condition_names: Optional[List[str]] = None,
