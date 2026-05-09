@@ -260,7 +260,7 @@ class PPOAgent:
 def train(
     env_kwargs:      Optional[Dict] = None,
     total_steps:     int   = 1_000_000,
-    rollout_len:     int   = 4096,
+    rollout_len:     int   = 2048,
     hidden_dim:      int   = 256,
     lr:              float = 3e-4,
     gamma:           float = 0.99,
@@ -281,6 +281,8 @@ def train(
     obs_dim = env.observation_space.shape[0]
 
     agent = PPOAgent(obs_dim=obs_dim, hidden_dim=hidden_dim, lr=lr, gamma=gamma)
+    
+    
 
     obs, _ = env.reset(seed=seed)
     ep_reward  = 0.0
@@ -295,11 +297,15 @@ def train(
     global_step = 0
     last_update_metrics: Dict[str, float] = {}
 
+
+    
+    
     while global_step < total_steps:
         # Entropy annealing: high exploration early, more deterministic policy later.
         anneal_steps = total_steps * entropy_anneal_frac
         frac = min(1.0, global_step / max(anneal_steps, 1))
         entropy_coef = entropy_start + frac * (entropy_end - entropy_start)
+        agent.set_entropy_coef(entropy_coef)
 
         # ── Collect rollout ───────────────────────────────────────────────
         for _ in range(rollout_len):
