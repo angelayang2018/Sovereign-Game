@@ -259,13 +259,14 @@ class PPOAgent:
 
 def train(
     env_kwargs:      Optional[Dict] = None,
-    total_steps:     int   = 200_000,
-    rollout_len:     int   = 512,
-    hidden_dim:      int   = 128,
+    total_steps:     int   = 1_000_000,
+    rollout_len:     int   = 4096,
+    hidden_dim:      int   = 256,
     lr:              float = 3e-4,
     gamma:           float = 0.99,
-    entropy_start:   float = 0.05,
-    entropy_end:     float = 0.005,
+    entropy_start:   float = 0.5,
+    entropy_end:     float = 0.05,
+    entropy_anneal_frac: float = 0.7,
     log_interval:    int   = 10,
     seed:            int   = 42,
     verbose:         bool  = True,
@@ -296,9 +297,9 @@ def train(
 
     while global_step < total_steps:
         # Entropy annealing: high exploration early, more deterministic policy later.
-        frac = min(1.0, global_step / max(total_steps, 1))
+        anneal_steps = total_steps * entropy_anneal_frac
+        frac = min(1.0, global_step / max(anneal_steps, 1))
         entropy_coef = entropy_start + frac * (entropy_end - entropy_start)
-        agent.set_entropy_coef(entropy_coef)
 
         # ── Collect rollout ───────────────────────────────────────────────
         for _ in range(rollout_len):
@@ -441,7 +442,7 @@ RULEBOOK_EXPERIMENT_ORDER = [
 def evaluate_policy(
     agent: PPOAgent,
     env_kwargs: Optional[Dict] = None,
-    n_episodes: int = 200,
+    n_episodes: int = 500,
     base_seed: int = 100_000,
 ) -> Dict[str, Any]:
     """Evaluate a policy with greedy actions for reproducible comparison."""
@@ -653,7 +654,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--mode", choices=["protocol", "demo"], default="protocol")
     parser.add_argument("--steps", type=int, default=500_000)
-    parser.add_argument("--eval_episodes", type=int, default=200)
+    parser.add_argument("--eval_episodes", type=int, default=500)
     parser.add_argument("--seeds", type=int, nargs="+", default=[42])
     parser.add_argument(
         "--conditions",

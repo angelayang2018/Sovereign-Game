@@ -65,8 +65,8 @@ INITIAL_CONTROL = np.array([INVADER, DEFENDER, NEUTRAL,
                               CONTESTED, CONTESTED, CONTESTED], dtype=np.int32)
 
 # Initial units per territory [INVADER, DEFENDER, NEUTRAL]
-INITIAL_UNITS_I = np.array([8, 0, 0, 2, 1, 1, 0, 0, 0], dtype=np.int32)   # 12 total
-INITIAL_UNITS_D = np.array([0, 5, 0, 0, 1, 0, 0, 0, 0], dtype=np.int32)   # 6 total
+INITIAL_UNITS_I = np.array([8, 0, 0, 2, 1, 1, 3, 0, 0], dtype=np.int32)   # 15 total
+INITIAL_UNITS_D = np.array([0, 5, 0, 0, 1, 0, 0, 0, 1], dtype=np.int32)   # 7 total
 INITIAL_UNITS_N = np.array([0, 0, 4, 0, 0, 0, 0, 0, 0], dtype=np.int32)   # 4 total (non-combatant)
 
 
@@ -86,7 +86,7 @@ DEFAULT_WEIGHTS = dict(
 TERMINAL_L_COLLAPSE   = -50.0
 TERMINAL_MIL_DEFEAT   = -30.0
 TERMINAL_NEGOTIATION  = +40.0
-TERMINAL_TIMEOUT      =   0.0
+TERMINAL_TIMEOUT      =   -10.0
 TERMINAL_CONQUEST     = +10.0
 
 
@@ -120,7 +120,7 @@ class SovereignEnv(gym.Env):
 
     def __init__(
         self,
-        T_max: int = 100,
+        T_max: int = 500,
         edges: Optional[List[Tuple[int, int]]] = None,
         resource_values: Optional[np.ndarray] = None,
         strategic_values: Optional[np.ndarray] = None,
@@ -162,8 +162,8 @@ class SovereignEnv(gym.Env):
         self._neutral_ally_active = False
         self._invader_ally_active = False
 
-        # Observation: M (9×3) + U_I (9) + U_D (9) + L + E + E_D + θ + t_occ (normalised) = 27+9+9+5 = 50
-        obs_dim = self.n_territories * 3 + self.n_territories + self.n_territories + 5
+        # Observation: M (9×3) + U_I (9) + U_D (9) + L + E + θ + t_occ (normalised) = 27+9+9+5 = 50
+        obs_dim = self.n_territories * 3 + self.n_territories + self.n_territories + 4
         self.observation_space = spaces.Box(
             low=-1.0, high=1.0, shape=(obs_dim,), dtype=np.float32
         )
@@ -187,7 +187,6 @@ class SovereignEnv(gym.Env):
             "units_D":  INITIAL_UNITS_D.copy(),        # (9,) int – Defender units per territory
             "L":        1.0,                           # legitimacy
             "E":        1.0,                           # Invader supply index
-            "E_D":      1.0,                           # Defender supply index
             "theta":    0.0,                           # neutral posture
             "t_occ":    0,                             # occupation duration
         }
@@ -217,7 +216,7 @@ class SovereignEnv(gym.Env):
 
         # ── 4-6. Apply military action & Defender response ───────────────────
         self._apply_military(a_mil, s)
-        self._defender_response(s)
+        self._defender_response(a_mil, s)
 
         # ── 7. Update L, E, t_occ ────────────────────────────────────────────
         self._update_derived_state(a_mil, s)
@@ -225,9 +224,10 @@ class SovereignEnv(gym.Env):
         # ── 8. Neutral posture shift ──────────────────────────────────────────
         if self.posture_active:
             self._update_posture(a_pol, a_mil, s)
+            # ── 9. Threshold events ───────────────────────────────────────────────
+            self._check_thresholds(s)
 
-        # ── 9. Threshold events ───────────────────────────────────────────────
-        self._check_thresholds(s)
+        
 
         # ── Negotiated settlement check ───────────────────────────────────────
         if self._check_negotiated_settlement(a_pol, s):
@@ -285,20 +285,19 @@ class SovereignEnv(gym.Env):
                 if s["t_occ"] > 0:
                     s["theta"] = float(np.clip(s["theta"] + 0.01, -1.0, 1.0))  # slow drift
 
-        if not self.legitimacy_active:
-            return
-        if   a_pol == POL_SEEK_ALLIANCE:
-            s["L"] = np.clip(s["L"] + 0.01, 0.0, 1.0)
-        elif a_pol == POL_IMPOSE_SANCTION:
-            s["L"] = np.clip(s["L"] - 0.02, 0.0, 1.0)
-            s["E"] = np.clip(s["E"] - 0.03, 0.0, 1.0)  # cost to self too
-        elif a_pol == POL_ISSUE_THREAT:
-            s["L"] = np.clip(s["L"] - 0.03, 0.0, 1.0)
-        elif a_pol == POL_NEGOTIATE:
-            s["L"] = np.clip(s["L"] + 0.03, 0.0, 1.0)
-        elif a_pol == POL_DO_NOTHING:
-            if s["L"] < 0.5:
-                s["L"] = np.clip(s["L"] - 0.005, 0.0, 1.0)
+        if self.legitimacy_active:
+            if   a_pol == POL_SEEK_ALLIANCE:
+                s["L"] = np.clip(s["L"] + 0.01, 0.0, 1.0)
+            elif a_pol == POL_IMPOSE_SANCTION:
+                s["L"] = np.clip(s["L"] - 0.02, 0.0, 1.0)
+                s["E"] = np.clip(s["E"] - 0.03, 0.0, 1.0)  # cost to self too
+            elif a_pol == POL_ISSUE_THREAT:
+                s["L"] = np.clip(s["L"] - 0.03, 0.0, 1.0)
+            elif a_pol == POL_NEGOTIATE:
+                s["L"] = np.clip(s["L"] + 0.03, 0.0, 1.0)
+            elif a_pol == POL_DO_NOTHING:
+                if s["L"] < 0.5:
+                    s["L"] = np.clip(s["L"] - 0.005, 0.0, 1.0)
 
     # ─── Military actions ─────────────────────────────────────────────────────
 
@@ -314,42 +313,26 @@ class SovereignEnv(gym.Env):
 
     def _do_advance(self, s):
         """
-        Invader advances into one adjacent contested territory or Defender territory.
-        Picks the territory with the weakest Defender presence adjacent to Invader-held land.
-        Combat is probabilistic (Bernoulli) based on relative strength.
-        Cannot advance into Neutral home territory.
+        Claim one adjacent territory that has no defender units.
+        No combat — purely occupying empty or uncontested land.
         """
         candidates = self._advance_candidates(s)
         if not candidates:
             return
-        # Choose candidate with fewest Defender units
-        target = min(candidates, key=lambda v: s["units_D"][v])
-        inv_units = s["units_I"][s["control"] == INVADER].sum()  # attacking from adjacent
-        def_units = s["units_D"][target]
-        inv_strength = max(inv_units, 1)
-        home_bonus = (1.0 + 0.2 * s["E_D"]) if target == HOME_TERRITORY[DEFENDER] else 1.0
-        def_strength = max(def_units, 1) * home_bonus
 
-        p_invader_wins = inv_strength / (inv_strength + def_strength)
-        if self.np_random.random() < p_invader_wins:
-            # Invader captures territory
-            s["units_D"][target] = max(0, s["units_D"][target] - 1)
-            s["control"][target] = INVADER
-            # Move one unit forward
-            adjacent_invader = [n for n in self.G.neighbors(target) if s["control"][n] == INVADER]
-            if adjacent_invader:
-                src = adjacent_invader[0]
-                if s["units_I"][src] > 1:
-                    s["units_I"][src] -= 1
-                    s["units_I"][target] += 1
-        else:
-            # Defender holds; Invader loses one unit from the front
-            front = self._invader_front_territories(s)
-            if front:
-                t = front[np.argmax([s["units_I"][f] for f in front])]
-                s["units_I"][t] = max(0, s["units_I"][t] - 1)
-            if s["control"][target] != NEUTRAL:
-                s["control"][target] = CONTESTED
+        # Only consider territories with no defender units
+        free = [v for v in candidates if s["units_D"][v] == 0]
+        if not free:
+            return  # nothing to claim — use MIL_STRIKE first
+
+        target = self.np_random.choice(free)
+        s["control"][target] = INVADER
+        adjacent_invader = [n for n in self.G.neighbors(target) if s["control"][n] == INVADER]
+        if adjacent_invader:
+            src = adjacent_invader[0]
+            if s["units_I"][src] > 1:
+                s["units_I"][src] -= 1
+                s["units_I"][target] += 1
 
     def _do_withdraw(self, s):
         """Cede one contested (non-home) Invader territory."""
@@ -362,19 +345,37 @@ class SovereignEnv(gym.Env):
             s["control"][target] = CONTESTED
 
     def _do_strike(self, s):
-        """
-        Destroy one Defender unit on the front line (any territory adjacent to
-        an Invader-held territory). Probabilistic: always succeeds if there is
-        a valid target, but costs legitimacy.
-        """
-        targets = self._strike_candidates(s)
-        if not targets:
-            return
-        target = min(targets, key=lambda v: s["units_D"][v])
-        if s["units_D"][target] > 0:
-            s["units_D"][target] -= 1
-        if self.legitimacy_active:
-            s["L"] = np.clip(s["L"] - 0.08, 0.0, 1.0)
+            """
+            Attack an adjacent territory. Probabilistic combat — may destroy
+            a defender unit or fail. Costs legitimacy on use.
+            """
+            targets = self._strike_candidates(s)
+            if not targets:
+                return
+
+            target = min(targets, key=lambda v: s["units_D"][v])
+            def_units = s["units_D"][target]
+            inv_units = s["units_I"][s["control"] == INVADER].sum()
+
+            inv_strength = max(inv_units, 1)
+            home_bonus = (1.0 + 0.2) if target == HOME_TERRITORY[DEFENDER] else 1.0
+            def_strength = max(def_units, 1) * home_bonus
+
+            p_invader_wins = inv_strength / (inv_strength + def_strength)
+            if self.np_random.random() < p_invader_wins:
+                s["units_D"][target] = max(0, s["units_D"][target] - 1)
+                # if defender units on that territory are now zero, it becomes contested
+                if s["units_D"][target] == 0 and s["control"][target] != NEUTRAL:
+                    s["control"][target] = CONTESTED
+            else:
+                # failed strike — invader loses a front unit
+                front = self._invader_front_territories(s)
+                if front:
+                    t = front[np.argmax([s["units_I"][f] for f in front])]
+                    s["units_I"][t] = max(0, s["units_I"][t] - 1)
+
+            if self.legitimacy_active:
+                s["L"] = np.clip(s["L"] - 0.08, 0.0, 1.0)
 
     def _advance_candidates(self, s) -> List[int]:
         """Territories adjacent to Invader that are not Invader-controlled and not Neutral home."""
@@ -409,13 +410,18 @@ class SovereignEnv(gym.Env):
 
     # ─── Defender rule-based response ────────────────────────────────────────
 
-    def _defender_response(self, s):
+    def _defender_response(self, a_mil, s):
         """
-        Simple rule-based Defender:
-        - If any Invader unit is adjacent to Defender territory, counterattack.
-        - Otherwise, reinforce the most threatened territory.
+        Defender only counterattacks if the invader was aggressive this step.
+        Aggressive = MIL_ADVANCE or MIL_STRIKE.
+        On non-aggressive turns, defender passively reinforces instead.
         """
-        # Find Defender territories adjacent to Invader
+        if a_mil not in (MIL_ADVANCE, MIL_STRIKE):
+            # Passive reinforcement: move one unit toward the most threatened territory
+            self._defender_reinforce(s)
+            return
+
+        # Original counterattack logic unchanged below
         threatened = []
         for v in range(self.n_territories):
             if s["control"][v] == DEFENDER or v == HOME_TERRITORY[DEFENDER]:
@@ -425,20 +431,42 @@ class SovereignEnv(gym.Env):
                         break
 
         if threatened:
-            # Counterattack the most accessible threatened territory
             target_v = threatened[0]
-            # Find adjacent Invader territory
             invader_adj = [nb for nb in self.G.neighbors(target_v)
-                           if s["control"][nb] == INVADER and s["units_I"][nb] > 0]
+                        if s["control"][nb] == INVADER and s["units_I"][nb] > 0]
             if invader_adj:
                 attack_src = invader_adj[0]
-                def_strength = s["units_D"][target_v] * (1.0 + 0.2 * s["E_D"]) if target_v == HOME_TERRITORY[DEFENDER] else s["units_D"][target_v]
+                def_strength = s["units_D"][target_v] * (1.0 + 0.2) if target_v == HOME_TERRITORY[DEFENDER] else s["units_D"][target_v]
                 inv_strength = max(s["units_I"][attack_src], 1)
                 p_def_wins = def_strength / (def_strength + inv_strength + 1e-9)
                 if self.np_random.random() < p_def_wins:
                     s["units_I"][attack_src] = max(0, s["units_I"][attack_src] - 1)
                     if s["units_I"][attack_src] == 0:
                         s["control"][attack_src] = CONTESTED
+
+    def _defender_reinforce(self, s):
+        """
+        Move one defender unit from a safe territory toward the front.
+        Only fires when invader is passive (HOLD or WITHDRAW).
+        """
+        # Find the defender territory with the most units that isn't on the front
+        safe = [
+            v for v in range(self.n_territories)
+            if s["control"][v] == DEFENDER and s["units_D"][v] > 1
+            and all(s["control"][nb] != INVADER for nb in self.G.neighbors(v))
+        ]
+        # Find the most threatened defender territory (fewest units, adjacent to invader)
+        front = [
+            v for v in range(self.n_territories)
+            if (s["control"][v] == DEFENDER or v == HOME_TERRITORY[DEFENDER])
+            and any(s["control"][nb] == INVADER for nb in self.G.neighbors(v))
+        ]
+        if safe and front:
+            src = max(safe, key=lambda v: s["units_D"][v])
+            dst = min(front, key=lambda v: s["units_D"][v])
+            # Only move if they're connected (within 2 hops is fine for a simple rule)
+            s["units_D"][src] -= 1
+            s["units_D"][dst] += 1
 
     # ─── State updates ────────────────────────────────────────────────────────
 
@@ -483,8 +511,12 @@ class SovereignEnv(gym.Env):
             - pc["epsilon"] * float(a_pol == POL_SEEK_ALLIANCE)    # alliance-seeking reduces drift
             + pc["zeta"]    * (s["t_occ"] / self.T_max)    # prolonged occupation steadily alienates
         )
-        noise = self.np_random.normal(0.0, pc["sigma"])
-        s["theta"] = float(np.clip(s["theta"] + mu + noise, -1.0, 1.0))
+        if self.legitimacy_active:
+            mu += pc["alpha"] * (1.0 - s["L"])
+
+        if self.posture_active:
+            noise = self.np_random.normal(0.0, pc["sigma"])
+            s["theta"] = float(np.clip(s["theta"] + mu + noise, -1.0, 1.0))
 
     def _check_thresholds(self, s):
         theta = s["theta"]
@@ -521,7 +553,7 @@ class SovereignEnv(gym.Env):
             self._invader_ally_active = True
             if self.legitimacy_active:
                 s["L"] = np.clip(s["L"] - 0.05, 0.0, 1.0)
-            s["E_D"] = np.clip(s["E_D"] - 0.05, 0.0, 1.0)  # Defender supply hit
+           
 
     def _check_negotiated_settlement(self, a_pol, s) -> bool:
         """
@@ -534,7 +566,7 @@ class SovereignEnv(gym.Env):
             return False
         if not self.legitimacy_active or not self.posture_active:
             return False
-        if s["L"] > 0.6 and s["theta"] < 0.0:
+        if s["L"] > 0.7 and s["theta"] < -0.5 and s["t_occ"] > 4:
             return self.np_random.random() < 0.5
         return False
 
@@ -591,7 +623,6 @@ class SovereignEnv(gym.Env):
         scalars = np.array([
             s["L"],
             s["E"],
-            s["E_D"],
             s["theta"],
             s["t_occ"] / self.T_max,
         ], dtype=np.float32)
@@ -609,7 +640,6 @@ class SovereignEnv(gym.Env):
             "step":            self._step_count,
             "L":               s["L"],
             "E":               s["E"],
-            "E_D":             s["E_D"],
             "theta":           s["theta"],
             "t_occ":           s["t_occ"],
             "invader_territories": invader_territories,
@@ -632,7 +662,7 @@ class SovereignEnv(gym.Env):
         s = self._state
         ctrl_sym = {INVADER: "I", DEFENDER: "D", NEUTRAL: "N", CONTESTED: "."}
         lines = [
-            f"Step {self._step_count:3d} | L={s['L']:.2f}  E={s['E']:.2f}  E_D={s['E_D']:.2f}  "
+            f"Step {self._step_count:3d} | L={s['L']:.2f}  E={s['E']:.2f}  "
             f"θ={s['theta']:+.2f}  t_occ={s['t_occ']}",
             "Territory: " + " ".join(f"{v}:{ctrl_sym[s['control'][v]]}" for v in range(self.n_territories)),
             f"Units I: {s['units_I'].tolist()}  D: {s['units_D'].tolist()}",
