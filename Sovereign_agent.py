@@ -18,6 +18,7 @@ import time
 import argparse
 import json
 from collections import Counter
+import matplotlib.pyplot as plt
 
 from Sovereign_env import (
     SovereignEnv,
@@ -152,7 +153,7 @@ class PPOAgent:
         value_coef:    float = 0.5,
         max_grad_norm: float = 0.5,
         n_epochs:      int   = 4,
-        batch_size:    int   = 64,
+        batch_size:    int   = 128,
         device:        str   = "cpu",
     ):
         self.gamma        = gamma
@@ -260,13 +261,13 @@ class PPOAgent:
 def train(
     env_kwargs:      Optional[Dict] = None,
     total_steps:     int   = 1_000_000,
-    rollout_len:     int   = 2048,
+    rollout_len:     int   = 4096,
     hidden_dim:      int   = 256,
     lr:              float = 3e-4,
     gamma:           float = 0.99,
-    entropy_start:   float = 0.5,
-    entropy_end:     float = 0.05,
-    entropy_anneal_frac: float = 0.7,
+    entropy_start:   float = 0.05,
+    entropy_end:     float = 0.003,
+    entropy_anneal_frac: float = 0.95,
     log_interval:    int   = 10,
     seed:            int   = 42,
     verbose:         bool  = True,
@@ -306,6 +307,11 @@ def train(
         frac = min(1.0, global_step / max(anneal_steps, 1))
         entropy_coef = entropy_start + frac * (entropy_end - entropy_start)
         agent.set_entropy_coef(entropy_coef)
+        
+        lr_frac = 1.0 - (global_step / total_steps)
+        new_lr = max(lr * lr_frac, 1e-5)
+        for param_group in agent.optimizer.param_groups:
+            param_group['lr'] = new_lr
 
         # ── Collect rollout ───────────────────────────────────────────────
         for _ in range(rollout_len):
@@ -472,7 +478,7 @@ def evaluate_policy(
         info: Dict[str, Any] = {}
 
         while not done:
-            action, _, _ = agent.select_action(obs, deterministic=True)
+            action, _, _ = agent.select_action(obs, deterministic=False)
             pol_counts[action[0]] += 1
             mil_counts[action[1]] += 1
             obs, reward, terminated, truncated, info = env.step(action)
@@ -523,6 +529,7 @@ def _print_protocol_summary(condition: str, aggregate_eval: Dict[str, float]) ->
     print(
         f"  Eval summary [{condition}] "
         f"R {aggregate_eval['mean_reward_mean']:.2f}±{aggregate_eval['mean_reward_std']:.2f} | "
+        f"Len {aggregate_eval['mean_length_mean']:.1f}±{aggregate_eval['mean_length_std']:.1f} | "
         f"Inv {aggregate_eval['mean_invasion_rate_mean']:.2f}±{aggregate_eval['mean_invasion_rate_std']:.2f} | "
         f"Dip {aggregate_eval['mean_diplomacy_rate_mean']:.2f}±{aggregate_eval['mean_diplomacy_rate_std']:.2f} | "
         f"OccTerr {aggregate_eval['mean_non_home_territories_mean']:.2f}±{aggregate_eval['mean_non_home_territories_std']:.2f}"
@@ -532,6 +539,38 @@ def _print_protocol_summary(condition: str, aggregate_eval: Dict[str, float]) ->
 def _print_experiment_header(name: str, expected_policy: str) -> None:
     print(f"  Condition: {name}")
     print(f"  Expected optimal policy: {expected_policy}")
+    
+def plot_territory_trajectories(
+        results: Dict[str, Dict],
+        agents: Dict[str, PPOAgent],
+        n_episodes: int = 50,
+    ):
+        fig, ax = plt.subplots(figsize=(10, 6))
+        colors = {
+            "full_model":       "blue",
+            "no_legitimacy":    "orange",
+            "no_occupation":    "green",
+            "no_posture":       "red",
+            "baseline_all_off": "black",
+        }
+
+        for condition, agent in agents.items():
+            env_kwargs = results[condition]["config"]["env_kwargs"]
+            traj = evaluate_territory_trajectory(agent, env_kwargs, n_episodes)
+
+            mean, std, steps = traj["mean"], traj["std"], traj["steps"]
+            color = colors.get(condition, "gray")
+            ax.plot(steps, mean, label=condition, color=color)
+            ax.fill_between(steps, mean - std, mean + std, alpha=0.2, color=color)
+
+        ax.set_xlabel("Normalized Episode Progress (0=start, 1=end)")
+        ax.set_ylabel("Non-Home Territories Held")
+        ax.set_title("Territory Expansion Trajectory by Condition")
+        ax.legend()
+        ax.grid(True, alpha=0.3)
+        plt.tight_layout()
+        plt.savefig("territory_trajectories.png", dpi=150)
+        plt.show()
 
 
 def run_protocol(
@@ -544,6 +583,7 @@ def run_protocol(
     """Run the full experimental protocol across all ablation conditions."""
     seeds = seeds or [42]
     results: Dict[str, Dict[str, Any]] = {}
+    agents: Dict[str, PPOAgent] = {}
 
     if condition_names is None:
         selected_names = RULEBOOK_EXPERIMENT_ORDER.copy()
@@ -594,6 +634,7 @@ def run_protocol(
                 "train_termination_counts": dict(train_term_counts),
                 "eval": eval_metrics,
             })
+        agents[name] = agent 
 
         aggregate_eval = _aggregate_seed_metrics(eval_metrics_by_seed)
         if verbose:
@@ -608,7 +649,9 @@ def run_protocol(
             "runs": seed_runs,
             "aggregate_eval": aggregate_eval,
         }
-    return results
+    plot_territory_trajectories(results, agents, n_episodes=50)
+    
+    return results, agents
 
 
 def load_condition_selection(path: str) -> List[str]:
@@ -633,6 +676,42 @@ def _print_termination_summary(name: str, logs: List[Dict]) -> None:
         pct = 100.0 * n / total if total > 0 else 0.0
         bar = "█" * int(pct / 2)
         print(f"    {reason:<25s} {n:5d}  ({pct:5.1f}%)  {bar}")
+        
+def evaluate_territory_trajectory(
+    agent: PPOAgent,
+    env_kwargs: Optional[Dict] = None,
+    n_episodes: int = 50,
+    n_bins: int = 100,  # normalize all episodes to 100 points
+    base_seed: int = 200_000,
+) -> Dict[str, np.ndarray]:
+    env = SovereignEnv(seed=base_seed, **(env_kwargs or {}))
+    all_trajectories = []
+
+    for ep in range(n_episodes):
+        obs, _ = env.reset(seed=base_seed + ep)
+        done = False
+        trajectory = []
+
+        while not done:
+            action, _, _ = agent.select_action(obs, deterministic=False)
+            obs, _, terminated, truncated, info = env.step(action)
+            trajectory.append(info["invader_non_home_territories"])
+            done = terminated or truncated
+
+        # Normalize to n_bins points regardless of episode length
+        trajectory = np.array(trajectory, dtype=np.float32)
+        indices = np.linspace(0, len(trajectory) - 1, n_bins).astype(int)
+        all_trajectories.append(trajectory[indices])
+
+    env.close()
+    trajectories = np.array(all_trajectories, dtype=np.float32)  # (n_episodes, n_bins)
+    return {
+        "mean":  trajectories.mean(axis=0),
+        "std":   trajectories.std(axis=0),
+        "steps": np.linspace(0, 1, n_bins),  # normalized 0→1
+    }
+    
+    
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -681,7 +760,7 @@ if __name__ == "__main__":
         selected_conditions = args.conditions
         if args.condition_file:
             selected_conditions = load_condition_selection(args.condition_file)
-        run_protocol(
+        results, agents = run_protocol(
             total_steps=args.steps,
             seeds=args.seeds,
             eval_episodes=args.eval_episodes,
