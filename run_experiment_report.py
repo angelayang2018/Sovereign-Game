@@ -9,7 +9,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Any
 
-from Sovereign_agent import run_protocol, RULEBOOK_EXPERIMENT_ORDER
+from Sovereign_agent_ import run_protocol, RULEBOOK_EXPERIMENT_ORDER
 
 
 def _format_counts(counts: Dict[str, int], order: List[str]) -> str:

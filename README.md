@@ -6,4 +6,4 @@ python3.12 is required
 
 TO RUN:
 python Sovereign_agent.py --mode protocol --steps 500000
-python Sovereign_agent.py --mode protocol --steps 20000
+python3.12 Sovereign_agent.py --mode protocol --steps 20000

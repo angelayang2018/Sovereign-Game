@@ -1,0 +1,147 @@
+SOVEREIGN Experiment Summary Report
+Generated: 2026-04-25T18:38:21
+Steps per condition: 20000
+Seeds: [42]
+Eval episodes per seed: 200
+========================================================================
+
+Condition: full_model
+Expected policy (rulebook): Negotiate or deter
+------------------------------------------------------------------------
+  Seed 42
+  Train summary: avg_reward=40.025, avg_invasion_rate=0.384, avg_diplomacy_rate=0.979, avg_non_home_territories=0.538
+  Train termination counts:
+    - negotiated_settlement :  7867 ( 99.6%)
+    - conquest              :     0 (  0.0%)
+    - legitimacy_collapse   :     1 (  0.0%)
+    - military_defeat       :    21 (  0.3%)
+    - timeout               :    10 (  0.1%)
+  Eval summary: R=40.328, Inv=1.000, Dip=1.000, OccTerr=1.665, L_final=1.000, theta_final=-0.057
+  Eval termination counts:
+    - negotiated_settlement :   200 (100.0%)
+    - conquest              :     0 (  0.0%)
+    - legitimacy_collapse   :     0 (  0.0%)
+    - military_defeat       :     0 (  0.0%)
+    - timeout               :     0 (  0.0%)
+    - unknown               :     0 (  0.0%)
+
+  Aggregate eval across seeds: R=40.328+-0.000, Inv=1.000+-0.000, Dip=1.000+-0.000, OccTerr=1.665+-0.000
+
+Condition: no_legitimacy
+Expected policy (rulebook): Slower invasion
+------------------------------------------------------------------------
+  Seed 42
+  Train summary: avg_reward=5.295, avg_invasion_rate=0.198, avg_diplomacy_rate=0.406, avg_non_home_territories=0.127
+  Train termination counts:
+    - negotiated_settlement :     0 (  0.0%)
+    - conquest              :     0 (  0.0%)
+    - legitimacy_collapse   :     0 (  0.0%)
+    - military_defeat       :    22 ( 10.3%)
+    - timeout               :   191 ( 89.7%)
+  Eval summary: R=9.000, Inv=0.000, Dip=0.000, OccTerr=0.000, L_final=1.000, theta_final=-0.006
+  Eval termination counts:
+    - negotiated_settlement :     0 (  0.0%)
+    - conquest              :     0 (  0.0%)
+    - legitimacy_collapse   :     0 (  0.0%)
+    - military_defeat       :     0 (  0.0%)
+    - timeout               :   200 (100.0%)
+    - unknown               :     0 (  0.0%)
+
+  Aggregate eval across seeds: R=9.000+-0.000, Inv=0.000+-0.000, Dip=0.000+-0.000, OccTerr=0.000+-0.000
+
+Condition: no_occupation
+Expected policy (rulebook): Partial invasion
+------------------------------------------------------------------------
+  Seed 42
+  Train summary: avg_reward=40.134, avg_invasion_rate=0.450, avg_diplomacy_rate=0.981, avg_non_home_territories=0.703
+  Train termination counts:
+    - negotiated_settlement :  8048 ( 99.8%)
+    - conquest              :     0 (  0.0%)
+    - legitimacy_collapse   :     3 (  0.0%)
+    - military_defeat       :    13 (  0.2%)
+    - timeout               :     4 (  0.0%)
+  Eval summary: R=40.385, Inv=1.000, Dip=1.000, OccTerr=1.880, L_final=1.000, theta_final=-0.064
+  Eval termination counts:
+    - negotiated_settlement :   200 (100.0%)
+    - conquest              :     0 (  0.0%)
+    - legitimacy_collapse   :     0 (  0.0%)
+    - military_defeat       :     0 (  0.0%)
+    - timeout               :     0 (  0.0%)
+    - unknown               :     0 (  0.0%)
+
+  Aggregate eval across seeds: R=40.385+-0.000, Inv=1.000+-0.000, Dip=1.000+-0.000, OccTerr=1.880+-0.000
+
+Condition: no_posture
+Expected policy (rulebook): Invasion
+------------------------------------------------------------------------
+  Seed 42
+  Train summary: avg_reward=3.602, avg_invasion_rate=0.389, avg_diplomacy_rate=0.588, avg_non_home_territories=0.177
+  Train termination counts:
+    - negotiated_settlement :     0 (  0.0%)
+    - conquest              :     0 (  0.0%)
+    - legitimacy_collapse   :     0 (  0.0%)
+    - military_defeat       :    32 ( 14.9%)
+    - timeout               :   183 ( 85.1%)
+  Eval summary: R=9.000, Inv=0.000, Dip=1.000, OccTerr=0.000, L_final=1.000, theta_final=0.000
+  Eval termination counts:
+    - negotiated_settlement :     0 (  0.0%)
+    - conquest              :     0 (  0.0%)
+    - legitimacy_collapse   :     0 (  0.0%)
+    - military_defeat       :     0 (  0.0%)
+    - timeout               :   200 (100.0%)
+    - unknown               :     0 (  0.0%)
+
+  Aggregate eval across seeds: R=9.000+-0.000, Inv=0.000+-0.000, Dip=1.000+-0.000, OccTerr=0.000+-0.000
+
+Condition: baseline_all_off
+Expected policy (rulebook): Always invade
+------------------------------------------------------------------------
+  Seed 42
+  Train summary: avg_reward=27.469, avg_invasion_rate=0.639, avg_diplomacy_rate=0.390, avg_non_home_territories=6.047
+  Train termination counts:
+    - negotiated_settlement :     0 (  0.0%)
+    - conquest              :     0 (  0.0%)
+    - legitimacy_collapse   :     0 (  0.0%)
+    - military_defeat       :    20 (  9.5%)
+    - timeout               :   191 ( 90.5%)
+  Eval summary: R=25.206, Inv=0.055, Dip=0.000, OccTerr=4.980, L_final=1.000, theta_final=0.000
+  Eval termination counts:
+    - negotiated_settlement :     0 (  0.0%)
+    - conquest              :     0 (  0.0%)
+    - legitimacy_collapse   :     0 (  0.0%)
+    - military_defeat       :     0 (  0.0%)
+    - timeout               :   200 (100.0%)
+    - unknown               :     0 (  0.0%)
+
+  Aggregate eval across seeds: R=25.206+-0.000, Inv=0.055+-0.000, Dip=0.000+-0.000, OccTerr=4.980+-0.000
+
+========================================================================
+Expected Policy Assessment
+========================================================================
+
+Overall: 1/5 conditions clearly match expected policy; 4/5 are mismatched or only partially aligned.
+
+Condition: full_model
+- Expected policy: Negotiate or deter
+- Assessment: MATCH
+- Why: Eval shows diplomacy rate = 1.000 and negotiated settlement = 100% with no timeout/defeat. This is the intended diplomatic resolution behavior.
+
+Condition: no_legitimacy
+- Expected policy: Slower invasion
+- Assessment: MISMATCH
+- Why: Eval shows invasion rate = 0.000, diplomacy = 0.000, and timeout = 100%. This indicates stalling/no-resolution behavior rather than gradual invasion.
+
+Condition: no_occupation
+- Expected policy: Partial invasion
+- Assessment: MISMATCH
+- Why: Eval shows invasion = 1.000, diplomacy = 1.000, and negotiated settlement = 100%. Behavior resembles the full diplomatic model, not a distinct partial-invasion policy.
+
+Condition: no_posture
+- Expected policy: Invasion
+- Assessment: STRONG MISMATCH
+- Why: Eval shows invasion = 0.000 and timeout = 100% while diplomacy = 1.000. This is opposite of the expected invasion-dominant outcome.
+
+Condition: baseline_all_off
+- Expected policy: Always invade
+- Assessment: PARTIAL / MOSTLY MISMATCH
+- Why: Eval invasion frequency is low (Inv = 0.055) and timeout = 100%, so it is not consistently selecting invade. High occupied territory suggests early gains followed by hold-like behavior.
