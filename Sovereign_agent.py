@@ -145,7 +145,7 @@ class PPOAgent:
         self,
         obs_dim:       int,
         hidden_dim:    int   = 128,
-        lr:            float = 3e-4,
+        lr:            float = 5e-4,
         gamma:         float = 0.99,
         gae_lambda:    float = 0.95,
         clip_eps:      float = 0.2,
@@ -265,9 +265,9 @@ def train(
     hidden_dim:      int   = 256,
     lr:              float = 3e-4,
     gamma:           float = 0.99,
-    entropy_start:   float = 0.05,
-    entropy_end:     float = 0.003,
-    entropy_anneal_frac: float = 0.95,
+    entropy_start:   float = 0.5,
+    entropy_end:     float = 0.01,
+    entropy_anneal_frac: float = 0.9,
     log_interval:    int   = 10,
     seed:            int   = 42,
     verbose:         bool  = True,
@@ -308,7 +308,7 @@ def train(
         entropy_coef = entropy_start + frac * (entropy_end - entropy_start)
         agent.set_entropy_coef(entropy_coef)
         
-        lr_frac = 1.0 - (global_step / total_steps)
+        lr_frac = 0.1 + 0.9 * (1.0 - (global_step / total_steps))
         new_lr = max(lr * lr_frac, 1e-5)
         for param_group in agent.optimizer.param_groups:
             param_group['lr'] = new_lr

@@ -86,7 +86,7 @@ DEFAULT_WEIGHTS = dict(
 TERMINAL_L_COLLAPSE   = -50.0
 TERMINAL_MIL_DEFEAT   = -30.0
 TERMINAL_NEGOTIATION  = +40.0
-TERMINAL_TIMEOUT      =   -10.0
+TERMINAL_TIMEOUT      =   0.0
 TERMINAL_CONQUEST     = +10.0
 
 
@@ -160,8 +160,8 @@ class SovereignEnv(gym.Env):
         self._neutral_ally_active = False
         self._invader_ally_active = False
 
-        # Observation: M (9×3) + U_I (9) + U_D (9) + L + E + θ + t_occ (normalised) = 27+9+9+5 = 50
-        obs_dim = self.n_territories * 3 + self.n_territories + self.n_territories + 4
+        
+        obs_dim = self.n_territories * 3 + self.n_territories + self.n_territories + 4  # 49
         self.observation_space = spaces.Box(
             low=-1.0, high=1.0, shape=(obs_dim,), dtype=np.float32
         )
@@ -455,6 +455,49 @@ class SovereignEnv(gym.Env):
             s["units_I"][t] = max(0, s["units_I"][t] - 1)
             if s["units_I"][t] == 0:
                 s["control"][t] = CONTESTED
+                
+    def _compute_supply_index(self, s) -> float:
+        """
+        Compute Invader's supply index E ∈ [0, 1] based on territory connectivity.
+        
+        Territories that are not contiguous with the Invader's home territory
+        generate no resource value and increase occupation cost (reflected here).
+        
+        Returns:
+            Float between 0 and 1 representing supply/logistical health
+        """
+        home_v = HOME_TERRITORY[INVADER]
+        
+        # Find all Invader-controlled territories
+        invader_territories = [v for v in range(self.n_territories) 
+                            if s["control"][v] == INVADER]
+        
+        if not invader_territories:
+            return 0.0
+        
+        # Build subgraph of Invader-controlled territories
+        subgraph = self.G.subgraph(invader_territories)
+        
+        # Find connected component containing home territory
+        if home_v in subgraph:
+            connected_component = nx.node_connected_component(subgraph, home_v)
+            connected_count = len(connected_component)
+        else:
+            connected_count = 0
+        
+        # Supply index = proportion of territories connected to home
+        # (You could also weight by strategic_value or resource_value)
+        supply_index = connected_count / len(invader_territories)
+        
+        # Apply sanctions penalty if active (from specification Section 7.3)
+        if self._sanction_active:
+            supply_index *= 0.7  # Sanctions reduce supply efficiency
+        
+        # Apply neutral supply route bonus if θ < -0.60
+        if self.posture_active and s["theta"] < -0.60:
+            supply_index = min(1.0, supply_index * 1.3)  # 30% bonus per spec
+        
+        return float(np.clip(supply_index, 0.0, 1.0))
 
 
     # ─── State updates ────────────────────────────────────────────────────────
@@ -471,11 +514,13 @@ class SovereignEnv(gym.Env):
                 s["t_occ"] += 1
             else:
                 s["t_occ"] = 0  # full withdrawal resets counter
+        
+        if self.legitimacy_active:  # or create a separate supply_active flag
+            s["E"] = self._compute_supply_index(s)
 
         # Insurgency
         if self.occupation_active and s["t_occ"] > 0:
-            # changed prob of insurgency, seems a little too high (0.05 -> 0.005)
-            p_ins = 1.0 - np.exp(-0.005 * s["t_occ"])
+            p_ins = 1.0 - np.exp(-0.007 * s["t_occ"])
             if self.np_random.random() < p_ins:
                 insurgency_fired = True
                 # Destroy one Invader unit in a non-home territory
@@ -500,8 +545,6 @@ class SovereignEnv(gym.Env):
             - pc["epsilon"] * float(a_pol == POL_SEEK_ALLIANCE)    # alliance-seeking reduces drift
             + pc["zeta"]    * (s["t_occ"] / self.T_max)    # prolonged occupation steadily alienates
         )
-        if self.legitimacy_active:
-            mu += pc["alpha"] * (1.0 - s["L"])
 
         if self.posture_active:
             noise = self.np_random.normal(0.0, pc["sigma"])
